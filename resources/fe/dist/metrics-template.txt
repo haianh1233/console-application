@@ -1,0 +1,22 @@
+"bytes": 140000
+
+"nb_message": 1000
+
+"batch_size": 100
+
+"encrypted": true
+"encrypted": false
+
+"compressed": true
+"compressed": false
+
+"transactional": true
+"transactional": false
+
+"schema": "avro"
+"schema": "json"
+"schema": "protobuf"
+"schema": "none"
+
+"enable_data_quality": true
+"enable_data_quality": false

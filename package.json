@@ -1,0 +1,56 @@
+{
+  "name": "console-electron-test",
+  "version": "1.0.0",
+  "description": "console-electron-test",
+  "type": "module",
+  "main": "src/main/index.js",
+  "scripts": {
+    "start": "electron-forge start",
+    "make": "electron-forge make",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "build": {
+    "files": [
+      "node_modules/@embedded-postgres/**"
+    ]
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@electron-forge/cli": "^7.5.0",
+    "@electron-forge/maker-deb": "^7.5.0",
+    "@electron-forge/maker-dmg": "^7.5.0",
+    "@electron-forge/maker-rpm": "^7.5.0",
+    "@electron-forge/maker-squirrel": "^7.5.0",
+    "@electron-forge/maker-zip": "^7.5.0",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.5.0",
+    "@electron-forge/plugin-fuses": "^7.5.0",
+    "@electron-forge/publisher-github": "^7.5.0",
+    "concurrently": "^9.1.0",
+    "cross-env": "^7.0.3",
+    "electron": "^33.2.0",
+    "wait-on": "^8.0.1"
+  },
+  "optionalDependencies": {
+    "@embedded-postgres/darwin-arm64": "^17.2.0-beta.14",
+    "@embedded-postgres/darwin-x64": "^17.2.0-beta.14",
+    "@embedded-postgres/linux-arm": "^17.2.0-beta.14",
+    "@embedded-postgres/linux-arm64": "^17.2.0-beta.14",
+    "@embedded-postgres/linux-ia32": "^17.2.0-beta.14",
+    "@embedded-postgres/linux-ppc64": "^17.2.0-beta.14",
+    "@embedded-postgres/linux-x64": "^17.2.0-beta.14",
+    "@embedded-postgres/windows-x64": "^17.2.0-beta.14"
+  },
+
+  "dependencies": {
+    "@electron/fuses": "^1.8.0",
+    "async-exit-hook": "^2.0.1",
+    "electron-is-dev": "^3.0.1",
+    "express": "^4.21.1",
+    "http-proxy-middleware": "^3.0.3",
+    "js-yaml": "^4.1.0",
+    "pg": "^8.13.1",
+    "sudo-prompt": "^9.2.1",
+    "ws": "^8.18.0"
+  }
+}

@@ -1,0 +1,375 @@
+#!/usr/bin/env bash
+
+###  ------------------------------- ###
+###  Helper methods for BASH scripts ###
+###  ------------------------------- ###
+
+die() {
+  echo "$@" 1>&2
+  exit 1
+}
+
+realpath () {
+(
+  TARGET_FILE="$1"
+  CHECK_CYGWIN="$2"
+
+  cd "$(dirname "$TARGET_FILE")"
+  TARGET_FILE=$(basename "$TARGET_FILE")
+
+  COUNT=0
+  while [ -L "$TARGET_FILE" -a $COUNT -lt 100 ]
+  do
+      TARGET_FILE=$(readlink "$TARGET_FILE")
+      cd "$(dirname "$TARGET_FILE")"
+      TARGET_FILE=$(basename "$TARGET_FILE")
+      COUNT=$(($COUNT + 1))
+  done
+
+  if [ "$TARGET_FILE" == "." -o "$TARGET_FILE" == ".." ]; then
+    cd "$TARGET_FILE"
+  fi
+  TARGET_DIR="$(pwd -P)"
+  if [ "$TARGET_DIR" == "/" ]; then
+    TARGET_FILE="/$TARGET_FILE"
+  else
+    TARGET_FILE="$TARGET_DIR/$TARGET_FILE"
+  fi
+
+  # make sure we grab the actual windows path, instead of cygwin's path.
+  if [[ "x$CHECK_CYGWIN" == "x" ]]; then
+    echo "$TARGET_FILE"
+  else
+    echo $(cygwinpath "$TARGET_FILE")
+  fi
+)
+}
+
+# TODO - Do we need to detect msys?
+
+# Uses uname to detect if we're in the odd cygwin environment.
+is_cygwin() {
+  local os=$(uname -s)
+  case "$os" in
+    CYGWIN*) return 0 ;;
+    *)  return 1 ;;
+  esac
+}
+
+# This can fix cygwin style /cygdrive paths so we get the
+# windows style paths.
+cygwinpath() {
+  local file="$1"
+  if is_cygwin; then
+    echo $(cygpath -w $file)
+  else
+    echo $file
+  fi
+}
+
+# Make something URI friendly
+make_url() {
+  url="$1"
+  local nospaces=${url// /%20}
+  if is_cygwin; then
+    echo "/${nospaces//\\//}"
+  else
+    echo "$nospaces"
+  fi
+}
+
+# This crazy function reads in a vanilla "linux" classpath string (only : are separators, and all /),
+# and returns a classpath with windows style paths, and ; separators.
+fixCygwinClasspath() {
+  OLDIFS=$IFS
+  IFS=":"
+  read -a classpath_members <<< "$1"
+  declare -a fixed_members
+  IFS=$OLDIFS
+  for i in "${!classpath_members[@]}"
+  do
+    fixed_members[i]=$(realpath "${classpath_members[i]}" "fix")
+  done
+  IFS=";"
+  echo "${fixed_members[*]}"
+  IFS=$OLDIFS
+}
+
+# Fix the classpath we use for cygwin.
+fix_classpath() {
+  cp="$1"
+  if is_cygwin; then
+    echo "$(fixCygwinClasspath "$cp")"
+  else
+    echo "$cp"
+  fi
+}
+# Detect if we should use JAVA_HOME or just try PATH.
+get_java_cmd() {
+  # High-priority override for Jlink images
+  if [[ -n "$bundled_jvm" ]];  then
+    echo "$bundled_jvm/bin/java"
+  elif [[ -n "$JAVA_HOME" ]] && [[ -x "$JAVA_HOME/bin/java" ]];  then
+    echo "$JAVA_HOME/bin/java"
+  else
+    echo "java"
+  fi
+}
+
+echoerr () {
+  echo 1>&2 "$@"
+}
+vlog () {
+  [[ $verbose || $debug ]] && echoerr "$@"
+}
+dlog () {
+  [[ $debug ]] && echoerr "$@"
+}
+execRunner () {
+  # print the arguments one to a line, quoting any containing spaces
+  [[ $verbose || $debug ]] && echo "# Executing command line:" && {
+    for arg; do
+      if printf "%s\n" "$arg" | grep -q ' '; then
+        printf "\"%s\"\n" "$arg"
+      else
+        printf "%s\n" "$arg"
+      fi
+    done
+    echo ""
+  }
+
+  # we use "exec" here for our pids to be accurate.
+  exec "$@"
+}
+addJava () {
+  dlog "[addJava] arg = '$1'"
+  java_args+=( "$1" )
+}
+addApp () {
+  dlog "[addApp] arg = '$1'"
+  app_commands+=( "$1" )
+}
+addResidual () {
+  dlog "[residual] arg = '$1'"
+  residual_args+=( "$1" )
+}
+addDebugger () {
+  addJava "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:$1"
+}
+
+require_arg () {
+  local type="$1"
+  local opt="$2"
+  local arg="$3"
+  if [[ -z "$arg" ]] || [[ "${arg:0:1}" == "-" ]]; then
+    die "$opt requires <$type> argument"
+  fi
+}
+is_function_defined() {
+  declare -f "$1" > /dev/null
+}
+
+# Attempt to detect if the script is running via a GUI or not
+# TODO - Determine where/how we use this generically
+detect_terminal_for_ui() {
+  [[ ! -t 0 ]] && [[ "${#residual_args}" == "0" ]] && {
+    echo "true"
+  }
+  # SPECIAL TEST FOR MAC
+  [[ "$(uname)" == "Darwin" ]] && [[ "$HOME" == "$PWD" ]] && [[ "${#residual_args}" == "0" ]] && {
+    echo "true"
+  }
+}
+
+# Processes incoming arguments and places them in appropriate global variables.  called by the run method.
+process_args () {
+  local no_more_snp_opts=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+             --) shift && no_more_snp_opts=1 && break ;;
+       -h|-help) usage; exit 1 ;;
+    -v|-verbose) verbose=1 && shift ;;
+      -d|-debug) debug=1 && shift ;;
+
+    -no-version-check) no_version_check=1 && shift ;;
+
+           -mem) echo "!! WARNING !! -mem option is ignored. Please use -J-Xmx and -J-Xms" && shift 2 ;;
+     -jvm-debug) require_arg port "$1" "$2" && addDebugger $2 && shift 2 ;;
+
+          -main) custom_mainclass="$2" && shift 2 ;;
+
+     -java-home) require_arg path "$1" "$2" && jre=`eval echo $2` && java_cmd="$jre/bin/java" && shift 2 ;;
+
+ -D*|-agentlib*|-agentpath*|-javaagent*|-XX*) addJava "$1" && shift ;;
+                                         -J*) addJava "${1:2}" && shift ;;
+                                           *) addResidual "$1" && shift ;;
+    esac
+  done
+
+  if [[ no_more_snp_opts ]]; then
+    while [[ $# -gt 0 ]]; do
+      addResidual "$1" && shift
+    done
+  fi
+
+  is_function_defined process_my_args && {
+    myargs=("${residual_args[@]}")
+    residual_args=()
+    process_my_args "${myargs[@]}"
+  }
+}
+
+# Actually runs the script.
+run() {
+  # TODO - check for sane environment
+
+  # process the combined args, then reset "$@" to the residuals
+  process_args "$@"
+  set -- "${residual_args[@]}"
+  argumentCount=$#
+
+  #check for jline terminal fixes on cygwin
+  if is_cygwin; then
+    stty -icanon min 1 -echo > /dev/null 2>&1
+    addJava "-Djline.terminal=jline.UnixTerminal"
+    addJava "-Dsbt.cygwin=true"
+  fi
+
+  # check java version
+  if [[ ! $no_version_check ]]; then
+    java_version_check
+  fi
+
+  if [ -n "$custom_mainclass" ]; then
+    mainclass=("$custom_mainclass")
+  else
+    mainclass=("${app_mainclass[@]}")
+  fi
+
+  # Fallback to custom mainclass if main class is not provided (this is the case if the JAR contains multiple apps)
+  if [ "$app_mainclass" = "" ] || [ $custom_mainclass ];then
+    if [ "$custom_mainclass" = "" ]; then
+      echo "You need to pass -main argument."
+      exit 1
+    fi
+
+    app_mainclass=$custom_mainclass
+  fi
+
+  # Now we check to see if there are any java opts on the environment. These get listed first, with the script able to override them.
+  if [[ "$JAVA_OPTS" != "" ]]; then
+    java_opts="${JAVA_OPTS}"
+  fi
+
+  # run sbt
+  execRunner "$java_cmd" \
+    ${java_opts[@]} \
+    "${java_args[@]}" \
+    -cp "$(fix_classpath "$app_classpath")" \
+    "${mainclass[@]}" \
+    "${app_commands[@]}" \
+    "${residual_args[@]}"
+
+  local exit_code=$?
+  if is_cygwin; then
+    stty icanon echo > /dev/null 2>&1
+  fi
+  exit $exit_code
+}
+
+# Loads a configuration file full of default command line options for this script.
+loadConfigFile() {
+  cat "$1" | sed $'/^\#/d;s/\r$//'
+}
+
+# Now check to see if it's a good enough version
+# TODO - Check to see if we have a configured default java version, otherwise use 1.8
+java_version_check() {
+  readonly java_version=$("$java_cmd" -version 2>&1 | awk -F '"' '/version/ {print $2}')
+  if [[ "$java_version" == "" ]]; then
+    echo
+    echo No java installations was detected.
+    echo Please go to http://www.java.com/getjava/ and download
+    echo
+    exit 1
+  else
+    local major=$(echo "$java_version" | cut -d'.' -f1)
+    if [[ "$major" -eq "1" ]]; then
+     local major=$(echo "$java_version" | cut -d'.' -f2)
+    fi
+    if [[ "$major" -lt "8" ]]; then
+      echo
+      echo The java installation you have is not up to date
+      echo $app_name requires at least version 1.8+, you have
+      echo version $java_version
+      echo
+      echo Please go to http://www.java.com/getjava/ and download
+      echo a valid Java Runtime and install before running $app_name.
+      echo
+      exit 1
+    fi
+  fi
+}
+
+###  ------------------------------- ###
+###  Start of customized settings    ###
+###  ------------------------------- ###
+usage() {
+ cat <<EOM
+Usage: $script_name [options]
+
+  -h | -help         print this message
+  -v | -verbose      this runner is chattier
+  -d | -debug        enable debug output for the launcher script
+  -no-version-check  Don't run the java version check.
+  -main <classname>  Define a custom main class
+  -jvm-debug <port>  Turn on JVM debugging, open at the given port.
+
+  # java version (default: java from PATH, currently $(java -version 2>&1 | grep version))
+  -java-home <path>         alternate JAVA_HOME
+
+  # jvm options and output control
+  JAVA_OPTS          environment variable, if unset uses "$java_opts"
+  -Dkey=val          pass -Dkey=val directly to the java runtime
+  -J-X               pass option -X directly to the java runtime
+                     (-J is stripped)
+
+  # special option
+  --                 To stop parsing built-in commands from the rest of the command-line.
+                     e.g.) enabling debug and sending -d as app argument
+                     \$ ./start-script -d -- -d
+
+In the case of duplicated or conflicting options, basically the order above
+shows precedence: JAVA_OPTS lowest, command line options highest except "--".
+Available main classes:
+	io.conduktor.console.Server
+	io.conduktor.console.doc.OpenApiGenerator
+EOM
+}
+
+###  ------------------------------- ###
+###  Main script                     ###
+###  ------------------------------- ###
+
+declare -a residual_args
+declare -a java_args
+declare -a app_commands
+declare -r real_script_path="$(realpath "$0")"
+declare -r app_home="$(realpath "$(dirname "$real_script_path")")"
+
+# TODO - Check whether this is ok in cygwin...
+declare -r lib_dir="$(realpath "${app_home}/../lib")"
+declare -a app_mainclass=('io.conduktor.console.Server')
+
+declare -r script_conf_file="${app_home}/../conf/application.ini"
+declare -r app_classpath="$lib_dir/io.conduktor.console.app-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.self-init-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.model-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.glue-zio2-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.consumer-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.config-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.platform-license-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.database-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.devtoolscommon-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.utils-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.tapir-common-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.permissions-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.adminapi-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.public-api-tapir-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.devtoolsmodel-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.auth-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.admin-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.alerting-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.admin-repository-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.audit-log-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.datamasking-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.test-kit-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.selfserve-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.devtoolskafkaadmin-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.devtoolsdb-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.devtoolsadapters-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.kafka-ssl-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.console-indexer-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.etlapi-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.authenticator-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.app-commons-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.devtoolsapi-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.devtoolsconsumer-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.devtoolsproducer-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.governance-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.monitoring-api-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.analytics-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/io.conduktor.console.kafkasql-af1db7ccd2fc501a325996b17a4b0bb801ef3890.jar:$lib_dir/org.scala-lang.scala3-library_3-3.5.1.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-files_3-1.11.7.jar:$lib_dir/dev.zio.zio-prelude_3-1.0.0-RC31.jar:$lib_dir/dev.zio.zio-config_3-4.0.2.jar:$lib_dir/dev.zio.zio-config-magnolia_3-4.0.2.jar:$lib_dir/dev.zio.zio-config-typesafe_3-4.0.2.jar:$lib_dir/dev.zio.zio-config-refined_3-4.0.2.jar:$lib_dir/eu.timepit.refined_3-0.11.2.jar:$lib_dir/dev.zio.zio-config-yaml_3-4.0.2.jar:$lib_dir/dev.zio.zio_3-2.1.11.jar:$lib_dir/org.postgresql.postgresql-42.7.4.jar:$lib_dir/org.http4s.http4s-dsl_3-0.23.28.jar:$lib_dir/org.http4s.http4s-blaze-server_3-0.23.16.jar:$lib_dir/org.http4s.http4s-blaze-client_3-0.23.16.jar:$lib_dir/org.http4s.http4s-circe_3-0.23.28.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-enumeratum_3-1.11.7.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-http4s-server-zio_3-1.11.7.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-json-circe_3-1.11.7.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-refined_3-1.11.7.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-sttp-client_3-1.11.7.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-prometheus-metrics_3-1.11.7.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-zio-metrics_3-1.11.7.jar:$lib_dir/io.circe.circe-core_3-0.14.10.jar:$lib_dir/io.circe.circe-generic_3-0.14.10.jar:$lib_dir/io.circe.circe-parser_3-0.14.10.jar:$lib_dir/io.circe.circe-refined_3-0.15.1.jar:$lib_dir/io.circe.circe-literal_3-0.14.10.jar:$lib_dir/com.beachape.enumeratum-circe_3-1.7.5.jar:$lib_dir/eu.timepit.refined-cats_3-0.11.2.jar:$lib_dir/com.softwaremill.sttp.client3.core_3-3.10.0.jar:$lib_dir/com.softwaremill.sttp.client3.circe_3-3.10.0.jar:$lib_dir/com.softwaremill.sttp.client3.zio_3-3.10.0.jar:$lib_dir/com.softwaremill.sttp.client3.slf4j-backend_3-3.10.0.jar:$lib_dir/com.softwaremill.sttp.client3.fs2_3-3.10.0.jar:$lib_dir/dev.zio.zio-logging-slf4j2_3-2.3.1.jar:$lib_dir/ch.qos.logback.logback-classic-1.5.10.jar:$lib_dir/net.logstash.logback.logstash-logback-encoder-8.0.jar:$lib_dir/org.slf4j.jul-to-slf4j-2.0.16.jar:$lib_dir/org.slf4j.log4j-over-slf4j-2.0.16.jar:$lib_dir/org.slf4j.jcl-over-slf4j-2.0.16.jar:$lib_dir/org.slf4j.slf4j-api-2.0.16.jar:$lib_dir/com.fasterxml.jackson.core.jackson-databind-2.14.3.jar:$lib_dir/org.pac4j.pac4j-oidc-6.0.6.jar:$lib_dir/org.pac4j.pac4j-http-6.0.6.jar:$lib_dir/org.http4s.http4s-ember-server_3-0.23.28.jar:$lib_dir/org.http4s.http4s-ember-client_3-0.23.28.jar:$lib_dir/org.ldaptive.ldaptive-2.3.2.jar:$lib_dir/commons-codec.commons-codec-1.17.1.jar:$lib_dir/com.github.jwt-scala.jwt-circe_3-10.0.1.jar:$lib_dir/io.github.hakky54.sslcontext-kickstart-8.3.7.jar:$lib_dir/io.github.hakky54.sslcontext-kickstart-for-pem-8.3.7.jar:$lib_dir/com.github.blemale.scaffeine_3-5.3.0.jar:$lib_dir/io.sentry.sentry-7.15.0.jar:$lib_dir/io.sentry.sentry-logback-7.15.0.jar:$lib_dir/org.tpolecat.doobie-core_3-1.0.0-RC5.jar:$lib_dir/org.tpolecat.doobie-postgres-circe_3-1.0.0-RC5.jar:$lib_dir/org.tpolecat.doobie-postgres_3-1.0.0-RC5.jar:$lib_dir/org.tpolecat.doobie-refined_3-1.0.0-RC5.jar:$lib_dir/io.github.gaelrenoux.tranzactio-doobie_3-5.2.0.jar:$lib_dir/io.prometheus.simpleclient-0.16.0.jar:$lib_dir/io.prometheus.simpleclient_common-0.16.0.jar:$lib_dir/com.segment.analytics.java.analytics-3.5.1.jar:$lib_dir/com.dimafeng.testcontainers-scala-kafka_3-0.41.4.jar:$lib_dir/dev.zio.zio-kafka_3-2.7.3.jar:$lib_dir/org.scala-lang.scala-library-2.13.14.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-core_3-1.11.7.jar:$lib_dir/dev.zio.zio-prelude-macros_3-1.0.0-RC31.jar:$lib_dir/dev.zio.zio-streams_3-2.1.11.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-zio-prelude_3-1.11.7.jar:$lib_dir/com.github.ghostdogpr.caliban_3-2.7.2.jar:$lib_dir/org.gnieh.diffson-circe_3-4.6.0.jar:$lib_dir/com.tersesystems.securitybuilder.securitybuilder-1.0.1.jar:$lib_dir/com.github.japgolly.nyaya.nyaya-gen_3-1.1.0.jar:$lib_dir/com.47deg.memeid4s_3-0.8.0.jar:$lib_dir/io.confluent.kafka-schema-registry-client-7.7.1.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-cats_3-1.11.7.jar:$lib_dir/com.sksamuel.avro4s.avro4s-core_3-5.0.9.jar:$lib_dir/com.47deg.memeid4s-literal_3-0.8.0.jar:$lib_dir/org.springframework.security.spring-security-crypto-6.3.3.jar:$lib_dir/org.bouncycastle.bcpkix-jdk18on-1.78.1.jar:$lib_dir/com.beachape.enumeratum_3-1.7.5.jar:$lib_dir/io.circe.circe-yaml_3-1.15.0.jar:$lib_dir/org.testcontainers.postgresql-1.20.2.jar:$lib_dir/dev.zio.zio-interop-cats_3-23.1.0.3.jar:$lib_dir/com.zaxxer.HikariCP-6.0.0.jar:$lib_dir/org.flywaydb.flyway-core-10.19.0.jar:$lib_dir/org.flywaydb.flyway-database-postgresql-10.19.0.jar:$lib_dir/software.amazon.awssdk.glue-2.28.21.jar:$lib_dir/dev.zio.zio-cache_3-0.2.3.jar:$lib_dir/com.google.protobuf.protobuf-java-3.25.5.jar:$lib_dir/com.google.protobuf.protobuf-java-util-3.25.5.jar:$lib_dir/com.google.code.gson.gson-2.11.0.jar:$lib_dir/com.github.erosb.everit-json-schema-1.14.4.jar:$lib_dir/com.github.curious-odd-man.rgxgen-2.0.jar:$lib_dir/org.apache.avro.avro-1.12.0.jar:$lib_dir/org.scala-lang.modules.scala-collection-compat_3-2.12.0.jar:$lib_dir/dev.zio.zio-config-derivation_3-4.0.2.jar:$lib_dir/com.typesafe.config-1.4.3.jar:$lib_dir/org.snakeyaml.snakeyaml-engine-2.6.jar:$lib_dir/io.seruco.encoding.base62-0.1.3.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-openapi-docs_3-1.11.7.jar:$lib_dir/com.softwaremill.sttp.apispec.openapi-circe-yaml_3-0.11.3.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-swagger-ui_3-1.11.7.jar:$lib_dir/com.github.jsqlparser.jsqlparser-5.0.jar:$lib_dir/dev.zio.zio-internal-macros_3-2.1.11.jar:$lib_dir/dev.zio.zio-stacktracer_3-2.1.11.jar:$lib_dir/dev.zio.izumi-reflect_3-2.3.9.jar:$lib_dir/org.checkerframework.checker-qual-3.42.0.jar:$lib_dir/org.http4s.http4s-core_3-0.23.28.jar:$lib_dir/org.http4s.http4s-blaze-core_3-0.23.16.jar:$lib_dir/org.http4s.http4s-server_3-0.23.28.jar:$lib_dir/org.http4s.http4s-client_3-0.23.28.jar:$lib_dir/org.http4s.http4s-jawn_3-0.23.28.jar:$lib_dir/io.circe.circe-jawn_3-0.14.10.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-zio_3-1.11.7.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-http4s-server_3-1.11.7.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-client_3-1.11.7.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-server_3-1.11.7.jar:$lib_dir/io.prometheus.prometheus-metrics-core-1.3.1.jar:$lib_dir/io.prometheus.prometheus-metrics-exposition-formats-1.3.1.jar:$lib_dir/io.circe.circe-numbers_3-0.14.10.jar:$lib_dir/org.typelevel.cats-core_3-2.12.0.jar:$lib_dir/com.softwaremill.sttp.model.core_3-1.7.11.jar:$lib_dir/com.softwaremill.sttp.shared.core_3-1.3.22.jar:$lib_dir/com.softwaremill.sttp.shared.ws_3-1.3.22.jar:$lib_dir/com.softwaremill.sttp.client3.json-common_3-3.10.0.jar:$lib_dir/com.softwaremill.sttp.shared.zio_3-1.3.22.jar:$lib_dir/dev.zio.zio-interop-reactivestreams_3-2.0.2.jar:$lib_dir/com.softwaremill.sttp.client3.cats_3-3.10.0.jar:$lib_dir/co.fs2.fs2-core_3-3.11.0.jar:$lib_dir/com.softwaremill.sttp.shared.fs2_3-1.3.22.jar:$lib_dir/co.fs2.fs2-reactive-streams_3-3.11.0.jar:$lib_dir/co.fs2.fs2-io_3-3.11.0.jar:$lib_dir/dev.zio.zio-logging_3-2.3.1.jar:$lib_dir/ch.qos.logback.logback-core-1.5.10.jar:$lib_dir/com.fasterxml.jackson.core.jackson-annotations-2.17.2.jar:$lib_dir/com.fasterxml.jackson.core.jackson-core-2.17.2.jar:$lib_dir/org.pac4j.pac4j-core-6.0.6.jar:$lib_dir/com.nimbusds.oauth2-oidc-sdk-11.18.jar:$lib_dir/com.nimbusds.nimbus-jose-jwt-9.40.jar:$lib_dir/com.google.guava.guava-33.2.1-jre.jar:$lib_dir/org.springframework.spring-core-6.1.11.jar:$lib_dir/com.google.code.findbugs.findbugs-annotations-3.0.1.jar:$lib_dir/org.http4s.http4s-ember-core_3-0.23.28.jar:$lib_dir/org.typelevel.log4cats-slf4j_3-2.7.0.jar:$lib_dir/org.typelevel.keypool_3-0.4.10.jar:$lib_dir/io.netty.netty-handler-4.1.112.Final.jar:$lib_dir/io.netty.netty-transport-native-epoll-4.1.110.Final-linux-x86_64.jar:$lib_dir/io.netty.netty-transport-native-epoll-4.1.110.Final-linux-aarch_64.jar:$lib_dir/io.netty.netty-transport-native-kqueue-4.1.110.Final-osx-x86_64.jar:$lib_dir/io.netty.netty-transport-native-kqueue-4.1.110.Final-osx-aarch_64.jar:$lib_dir/com.github.jwt-scala.jwt-json-common_3-10.0.1.jar:$lib_dir/com.github.ben-manes.caffeine.caffeine-3.1.8.jar:$lib_dir/org.scala-lang.modules.scala-java8-compat_3-1.0.2.jar:$lib_dir/javassist.javassist-3.12.1.GA.jar:$lib_dir/dev.zio.zio-opentelemetry_3-2.0.3.jar:$lib_dir/software.amazon.msk.aws-msk-iam-auth-2.2.0.jar:$lib_dir/org.gnieh.fs2-data-json-circe_3-1.11.1.jar:$lib_dir/org.sourcelab.kafka-connect-client-4.0.5.jar:$lib_dir/com.github.ghostdogpr.caliban-tools_3-2.7.2.jar:$lib_dir/org.tpolecat.typename_3-1.1.0.jar:$lib_dir/dev.zio.zio-metrics-connectors_3-2.3.1.jar:$lib_dir/dev.zio.zio-metrics-connectors-prometheus_3-2.3.1.jar:$lib_dir/com.github.ghostdogpr.caliban-tapir_3-2.7.2.jar:$lib_dir/org.typelevel.cats-free_3-2.12.0.jar:$lib_dir/org.tpolecat.doobie-free_3-1.0.0-RC5.jar:$lib_dir/io.github.gaelrenoux.tranzactio-core_3-5.2.0.jar:$lib_dir/io.prometheus.simpleclient_tracer_otel-0.16.0.jar:$lib_dir/io.prometheus.simpleclient_tracer_otel_agent-0.16.0.jar:$lib_dir/com.segment.analytics.java.analytics-core-3.5.1.jar:$lib_dir/com.squareup.okhttp3.okhttp-4.10.0.jar:$lib_dir/com.squareup.okhttp3.logging-interceptor-4.10.0.jar:$lib_dir/com.squareup.retrofit2.converter-gson-2.9.0.jar:$lib_dir/com.squareup.retrofit2.retrofit-mock-2.9.0.jar:$lib_dir/com.segment.backo.backo-1.0.0.jar:$lib_dir/com.dimafeng.testcontainers-scala-core_3-0.41.4.jar:$lib_dir/org.testcontainers.kafka-1.19.1.jar:$lib_dir/org.apache.kafka.kafka-clients-3.6.2.jar:$lib_dir/com.softwaremill.magnolia1_3.magnolia_3-1.3.7.jar:$lib_dir/software.amazon.awssdk.sts-2.28.21.jar:$lib_dir/io.conduktor.azure-kafka-oauthbearer-0.2.0.jar:$lib_dir/com.azure.azure-identity-1.14.0.jar:$lib_dir/org.apache.commons.commons-lang3-3.17.0.jar:$lib_dir/net.thisptr.jackson-jq-0.0.13.jar:$lib_dir/org.graalvm.sdk.graal-sdk-24.1.0.jar:$lib_dir/org.graalvm.js.js-scriptengine-24.1.0.jar:$lib_dir/org.graalvm.truffle.truffle-api-24.1.0.jar:$lib_dir/org.msgpack.msgpack-core-0.9.8.jar:$lib_dir/org.msgpack.jackson-dataformat-msgpack-0.9.8.jar:$lib_dir/io.confluent.kafka-avro-serializer-7.7.1.jar:$lib_dir/io.confluent.kafka-protobuf-serializer-7.7.1.jar:$lib_dir/io.confluent.kafka-json-schema-serializer-7.7.1.jar:$lib_dir/software.amazon.glue.schema-registry-serde-1.1.20-cdk2.jar:$lib_dir/com.github.ghostdogpr.caliban-macros_3-2.7.2.jar:$lib_dir/com.lihaoyi.fastparse_3-3.1.0.jar:$lib_dir/dev.zio.zio-query_3-0.7.1.jar:$lib_dir/org.gnieh.diffson-core_3-4.6.0.jar:$lib_dir/org.slieb.throwable-interfaces-1.13.jar:$lib_dir/com.github.japgolly.nyaya.nyaya-util_3-1.1.0.jar:$lib_dir/com.github.japgolly.microlibs.multimap_3-4.2.1.jar:$lib_dir/com.github.japgolly.microlibs.recursion_3-4.2.1.jar:$lib_dir/dev.optics.monocle-core_3-3.2.0.jar:$lib_dir/com.47deg.memeid-0.8.0.jar:$lib_dir/org.yaml.snakeyaml-2.2.jar:$lib_dir/org.apache.commons.commons-compress-1.26.0.jar:$lib_dir/io.swagger.core.v3.swagger-annotations-2.1.10.jar:$lib_dir/io.confluent.common-utils-7.7.1.jar:$lib_dir/org.bouncycastle.bcprov-jdk18on-1.78.1.jar:$lib_dir/org.bouncycastle.bcutil-jdk18on-1.78.1.jar:$lib_dir/com.beachape.enumeratum-macros_3-1.7.5.jar:$lib_dir/io.circe.circe-yaml-common_3-1.15.0.jar:$lib_dir/org.testcontainers.jdbc-1.20.2.jar:$lib_dir/dev.zio.zio-interop-tracer_3-23.1.0.3.jar:$lib_dir/dev.zio.zio-managed_3-2.1.7.jar:$lib_dir/org.typelevel.cats-effect-std_3-3.5.4.jar:$lib_dir/org.typelevel.cats-mtl_3-1.4.0.jar:$lib_dir/com.fasterxml.jackson.dataformat.jackson-dataformat-toml-2.15.2.jar:$lib_dir/com.fasterxml.jackson.datatype.jackson-datatype-jsr310-2.17.2.jar:$lib_dir/software.amazon.awssdk.aws-json-protocol-2.28.21.jar:$lib_dir/software.amazon.awssdk.protocol-core-2.28.21.jar:$lib_dir/software.amazon.awssdk.http-auth-aws-2.28.21.jar:$lib_dir/software.amazon.awssdk.sdk-core-2.28.21.jar:$lib_dir/software.amazon.awssdk.auth-2.28.21.jar:$lib_dir/software.amazon.awssdk.http-auth-spi-2.28.21.jar:$lib_dir/software.amazon.awssdk.http-auth-2.28.21.jar:$lib_dir/software.amazon.awssdk.identity-spi-2.28.21.jar:$lib_dir/software.amazon.awssdk.http-client-spi-2.28.21.jar:$lib_dir/software.amazon.awssdk.regions-2.28.21.jar:$lib_dir/software.amazon.awssdk.annotations-2.28.21.jar:$lib_dir/software.amazon.awssdk.utils-2.28.21.jar:$lib_dir/software.amazon.awssdk.aws-core-2.28.21.jar:$lib_dir/software.amazon.awssdk.metrics-spi-2.28.21.jar:$lib_dir/software.amazon.awssdk.json-utils-2.28.21.jar:$lib_dir/software.amazon.awssdk.endpoints-spi-2.28.21.jar:$lib_dir/software.amazon.awssdk.retries-spi-2.28.21.jar:$lib_dir/software.amazon.awssdk.apache-client-2.28.21.jar:$lib_dir/software.amazon.awssdk.netty-nio-client-2.28.21.jar:$lib_dir/com.google.code.findbugs.jsr305-3.0.2.jar:$lib_dir/com.google.errorprone.error_prone_annotations-2.27.0.jar:$lib_dir/com.google.j2objc.j2objc-annotations-3.0.0.jar:$lib_dir/org.json.json-20231013.jar:$lib_dir/commons-validator.commons-validator-1.8.0.jar:$lib_dir/com.damnhandy.handy-uri-templates-2.1.8.jar:$lib_dir/com.google.re2j.re2j-1.6.jar:$lib_dir/org.apache.kafka.kafka-storage-3.6.2.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-apispec-docs_3-1.11.7.jar:$lib_dir/com.softwaremill.quicklens.quicklens_3-1.9.9.jar:$lib_dir/com.softwaremill.sttp.apispec.openapi-model_3-0.11.3.jar:$lib_dir/com.softwaremill.sttp.apispec.openapi-circe_3-0.11.3.jar:$lib_dir/org.webjars.swagger-ui-5.17.14.jar:$lib_dir/dev.zio.zio-test_3-2.1.11.jar:$lib_dir/dev.zio.zio-test-sbt_3-2.1.11.jar:$lib_dir/dev.zio.zio-test-magnolia_3-2.1.11.jar:$lib_dir/dev.zio.zio-test-scalacheck_3-2.1.11.jar:$lib_dir/dev.zio.zio-mock_3-1.0.0-RC12.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-sttp-stub-server_3-1.11.7.jar:$lib_dir/io.circe.circe-testing_3-0.14.10.jar:$lib_dir/dev.zio.izumi-reflect-thirdparty-boopickle-shaded_3-2.3.9.jar:$lib_dir/org.typelevel.case-insensitive_3-1.4.0.jar:$lib_dir/org.typelevel.cats-parse_3-1.0.0.jar:$lib_dir/org.http4s.http4s-crypto_3-0.2.4.jar:$lib_dir/com.comcast.ip4s-core_3-3.6.0.jar:$lib_dir/org.typelevel.literally_3-1.1.0.jar:$lib_dir/org.scodec.scodec-bits_3-1.1.38.jar:$lib_dir/org.typelevel.vault_3-3.6.0.jar:$lib_dir/org.log4s.log4s_3-1.10.0.jar:$lib_dir/org.http4s.blaze-http_3-0.23.16.jar:$lib_dir/org.typelevel.jawn-fs2_3-2.4.0.jar:$lib_dir/org.typelevel.jawn-parser_3-1.6.0.jar:$lib_dir/com.softwaremill.sttp.tapir.tapir-cats-effect_3-1.11.7.jar:$lib_dir/io.prometheus.prometheus-metrics-model-1.3.1.jar:$lib_dir/io.prometheus.prometheus-metrics-config-1.3.1.jar:$lib_dir/io.prometheus.prometheus-metrics-tracer-initializer-1.3.1.jar:$lib_dir/io.prometheus.prometheus-metrics-shaded-protobuf-1.3.1.jar:$lib_dir/org.typelevel.cats-kernel_3-2.12.0.jar:$lib_dir/org.reactivestreams.reactive-streams-1.0.4.jar:$lib_dir/org.typelevel.cats-effect-kernel_3-3.5.4.jar:$lib_dir/org.typelevel.cats-effect_3-3.5.4.jar:$lib_dir/dev.zio.zio-parser_3-0.1.10.jar:$lib_dir/org.apache.commons.commons-text-1.10.0.jar:$lib_dir/com.github.stephenc.jcip.jcip-annotations-1.0-1.jar:$lib_dir/com.nimbusds.content-type-2.3.jar:$lib_dir/net.minidev.json-smart-2.5.1.jar:$lib_dir/com.nimbusds.lang-tag-1.7.jar:$lib_dir/com.google.guava.failureaccess-1.0.2.jar:$lib_dir/com.google.guava.listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar:$lib_dir/org.typelevel.log4cats-core_3-2.7.0.jar:$lib_dir/com.twitter.hpack-1.0.2.jar:$lib_dir/io.netty.netty-common-4.1.112.Final.jar:$lib_dir/io.netty.netty-resolver-4.1.112.Final.jar:$lib_dir/io.netty.netty-buffer-4.1.112.Final.jar:$lib_dir/io.netty.netty-transport-4.1.112.Final.jar:$lib_dir/io.netty.netty-transport-native-unix-common-4.1.112.Final.jar:$lib_dir/io.netty.netty-codec-4.1.112.Final.jar:$lib_dir/io.netty.netty-transport-classes-epoll-4.1.112.Final.jar:$lib_dir/io.netty.netty-transport-classes-kqueue-4.1.110.Final.jar:$lib_dir/com.github.jwt-scala.jwt-core_3-10.0.1.jar:$lib_dir/io.opentelemetry.opentelemetry-api-1.18.0.jar:$lib_dir/io.opentelemetry.opentelemetry-context-1.18.0.jar:$lib_dir/software.amazon.awssdk.sso-2.26.8.jar:$lib_dir/software.amazon.awssdk.ssooidc-2.26.8.jar:$lib_dir/org.gnieh.fs2-data-json_3-1.11.1.jar:$lib_dir/org.portable-scala.portable-scala-reflect_2.13-1.1.3.jar:$lib_dir/org.apache.httpcomponents.httpclient-4.5.14.jar:$lib_dir/io.github.classgraph.classgraph-4.8.177.jar:$lib_dir/com.linkedin.cytodynamics.cytodynamics-nucleus-0.2.0.jar:$lib_dir/org.apache.kafka.kafka_2.13-3.6.2.jar:$lib_dir/com.fasterxml.jackson.module.jackson-module-scala_3-2.14.3.jar:$lib_dir/org.gnieh.fs2-data-csv_3-1.11.1.jar:$lib_dir/org.gnieh.fs2-data-csv-generic_3-1.11.1.jar:$lib_dir/com.github.ghostdogpr.caliban-client_3-2.7.2.jar:$lib_dir/org.scalameta.scalafmt-interfaces-3.8.0.jar:$lib_dir/io.get-coursier.interface-1.0.19.jar:$lib_dir/io.prometheus.simpleclient_tracer_common-0.16.0.jar:$lib_dir/com.squareup.retrofit2.retrofit-2.9.0.jar:$lib_dir/com.google.auto.value.auto-value-annotations-1.10.1.jar:$lib_dir/com.squareup.okio.okio-jvm-3.7.0.jar:$lib_dir/org.jetbrains.kotlin.kotlin-stdlib-1.9.23.jar:$lib_dir/org.jetbrains.kotlin.kotlin-stdlib-jdk8-1.9.10.jar:$lib_dir/org.testcontainers.testcontainers-1.20.2.jar:$lib_dir/com.github.luben.zstd-jni-1.5.5-1.jar:$lib_dir/org.lz4.lz4-java-1.8.0.jar:$lib_dir/org.xerial.snappy.snappy-java-1.1.10.4.jar:$lib_dir/software.amazon.awssdk.aws-query-protocol-2.28.21.jar:$lib_dir/software.amazon.awssdk.profiles-2.28.21.jar:$lib_dir/com.azure.azure-core-1.53.0.jar:$lib_dir/com.azure.azure-core-http-netty-1.15.5.jar:$lib_dir/com.azure.azure-json-1.3.0.jar:$lib_dir/com.microsoft.azure.msal4j-1.17.2.jar:$lib_dir/com.microsoft.azure.msal4j-persistence-extension-1.3.0.jar:$lib_dir/net.java.dev.jna.jna-platform-5.13.0.jar:$lib_dir/org.jruby.joni.joni-2.1.27.jar:$lib_dir/org.graalvm.sdk.collections-24.1.0.jar:$lib_dir/org.graalvm.sdk.nativeimage-24.1.0.jar:$lib_dir/org.graalvm.polyglot.polyglot-24.1.0.jar:$lib_dir/org.graalvm.sdk.word-24.1.0.jar:$lib_dir/org.graalvm.truffle.truffle-enterprise-24.1.0.jar:$lib_dir/io.confluent.kafka-schema-serializer-7.7.1.jar:$lib_dir/io.confluent.logredactor-1.0.12.jar:$lib_dir/io.confluent.kafka-protobuf-provider-7.7.1.jar:$lib_dir/io.confluent.kafka-protobuf-types-7.7.1.jar:$lib_dir/io.confluent.kafka-json-schema-provider-7.7.1.jar:$lib_dir/io.confluent.kafka-json-serializer-7.7.1.jar:$lib_dir/com.amazonaws.aws-java-sdk-sts-1.12.660.jar:$lib_dir/software.amazon.glue.schema-registry-common-1.1.20-cdk2.jar:$lib_dir/software.amazon.awssdk.arns-2.22.12.jar:$lib_dir/org.jetbrains.kotlin.kotlin-reflect-1.9.22.jar:$lib_dir/org.jetbrains.kotlin.kotlin-scripting-compiler-impl-embeddable-1.9.10.jar:$lib_dir/org.jetbrains.kotlin.kotlin-scripting-compiler-embeddable-1.9.10.jar:$lib_dir/com.squareup.okio.okio-3.4.0.jar:$lib_dir/com.squareup.okio.okio-fakefilesystem-3.2.0.jar:$lib_dir/org.jetbrains.kotlinx.kotlinx-serialization-core-jvm-1.4.0.jar:$lib_dir/com.squareup.wire.wire-schema-4.3.0.jar:$lib_dir/com.squareup.wire.wire-compiler-4.3.0.jar:$lib_dir/com.google.api.grpc.proto-google-common-protos-2.22.1.jar:$lib_dir/com.google.jimfs.jimfs-1.1.jar:$lib_dir/org.apache.commons.commons-collections4-4.4.jar:$lib_dir/com.lihaoyi.sourcecode_3-0.4.0.jar:$lib_dir/com.lihaoyi.geny_3-1.1.0.jar:$lib_dir/commons-io.commons-io-2.15.1.jar:$lib_dir/org.testcontainers.database-commons-1.20.2.jar:$lib_dir/software.amazon.awssdk.third-party-jackson-core-2.28.21.jar:$lib_dir/software.amazon.awssdk.checksums-spi-2.28.21.jar:$lib_dir/software.amazon.awssdk.checksums-2.28.21.jar:$lib_dir/software.amazon.awssdk.retries-2.28.21.jar:$lib_dir/software.amazon.awssdk.http-auth-aws-eventstream-2.28.21.jar:$lib_dir/software.amazon.eventstream.eventstream-1.0.1.jar:$lib_dir/org.apache.httpcomponents.httpcore-4.4.16.jar:$lib_dir/io.netty.netty-codec-http-4.1.112.Final.jar:$lib_dir/io.netty.netty-codec-http2-4.1.112.Final.jar:$lib_dir/commons-digester.commons-digester-2.1.jar:$lib_dir/commons-logging.commons-logging-1.3.0.jar:$lib_dir/commons-collections.commons-collections-3.2.2.jar:$lib_dir/joda-time.joda-time-2.10.14.jar:$lib_dir/org.apache.kafka.kafka-storage-api-3.6.2.jar:$lib_dir/org.apache.kafka.kafka-server-common-3.6.2.jar:$lib_dir/com.yammer.metrics.metrics-core-2.2.0.jar:$lib_dir/com.softwaremill.sttp.apispec.asyncapi-model_3-0.11.3.jar:$lib_dir/com.softwaremill.sttp.apispec.apispec-model_3-0.11.3.jar:$lib_dir/com.softwaremill.sttp.apispec.jsonschema-circe_3-0.11.3.jar:$lib_dir/org.scala-sbt.test-interface-1.0.jar:$lib_dir/org.scalacheck.scalacheck_3-1.18.0.jar:$lib_dir/io.circe.circe-numbers-testing_3-0.14.10.jar:$lib_dir/org.typelevel.cats-laws_3-2.12.0.jar:$lib_dir/org.typelevel.discipline-core_3-1.7.0.jar:$lib_dir/com.softwaremill.diffx.diffx-core_3-0.9.0.jar:$lib_dir/org.http4s.blaze-core_3-0.23.16.jar:$lib_dir/io.prometheus.prometheus-metrics-tracer-common-1.3.1.jar:$lib_dir/io.prometheus.prometheus-metrics-tracer-otel-1.3.1.jar:$lib_dir/io.prometheus.prometheus-metrics-tracer-otel-agent-1.3.1.jar:$lib_dir/net.minidev.accessors-smart-2.5.1.jar:$lib_dir/org.gnieh.fs2-data-text_3-1.11.1.jar:$lib_dir/org.gnieh.fs2-data-finite-state_3-1.11.1.jar:$lib_dir/org.apache.kafka.kafka-group-coordinator-3.6.2.jar:$lib_dir/org.apache.kafka.kafka-metadata-3.6.2.jar:$lib_dir/org.apache.kafka.kafka-tools-api-3.6.2.jar:$lib_dir/org.apache.kafka.kafka-raft-3.6.2.jar:$lib_dir/net.sourceforge.argparse4j.argparse4j-0.7.0.jar:$lib_dir/com.fasterxml.jackson.dataformat.jackson-dataformat-csv-2.16.0.jar:$lib_dir/com.fasterxml.jackson.datatype.jackson-datatype-jdk8-2.16.0.jar:$lib_dir/net.sf.jopt-simple.jopt-simple-5.0.4.jar:$lib_dir/org.bitbucket.b_c.jose4j-0.9.4.jar:$lib_dir/org.scala-lang.scala-reflect-2.13.14.jar:$lib_dir/com.typesafe.scala-logging.scala-logging_2.13-3.9.4.jar:$lib_dir/io.dropwizard.metrics.metrics-core-4.1.12.1.jar:$lib_dir/org.apache.zookeeper.zookeeper-3.8.4.jar:$lib_dir/commons-cli.commons-cli-1.4.jar:$lib_dir/com.thoughtworks.paranamer.paranamer-2.8.jar:$lib_dir/org.typelevel.shapeless3-deriving_3-3.4.1.jar:$lib_dir/com.softwaremill.sttp.client3.jsoniter_3-3.9.7.jar:$lib_dir/com.github.plokhotnyuk.jsoniter-scala.jsoniter-scala-core_3-2.30.1.jar:$lib_dir/org.jetbrains.annotations-17.0.0.jar:$lib_dir/org.jetbrains.kotlin.kotlin-stdlib-jdk7-1.9.10.jar:$lib_dir/junit.junit-4.13.2.jar:$lib_dir/org.rnorth.duct-tape.duct-tape-1.0.8.jar:$lib_dir/com.github.docker-java.docker-java-api-3.4.0.jar:$lib_dir/com.github.docker-java.docker-java-transport-zerodep-3.4.0.jar:$lib_dir/com.azure.azure-xml-1.1.0.jar:$lib_dir/io.projectreactor.reactor-core-3.4.38.jar:$lib_dir/io.netty.netty-handler-proxy-4.1.110.Final.jar:$lib_dir/io.netty.netty-tcnative-boringssl-static-2.0.65.Final.jar:$lib_dir/io.projectreactor.netty.reactor-netty-http-1.0.45.jar:$lib_dir/net.java.dev.jna.jna-5.13.0.jar:$lib_dir/org.jruby.jcodings.jcodings-1.0.43.jar:$lib_dir/org.graalvm.js.js-language-24.1.0.jar:$lib_dir/org.graalvm.truffle.truffle-runtime-24.1.0.jar:$lib_dir/org.graalvm.truffle.truffle-compiler-24.1.0.jar:$lib_dir/org.graalvm.sdk.jniutils-24.1.0.jar:$lib_dir/org.graalvm.sdk.nativebridge-24.1.0.jar:$lib_dir/io.confluent.logredactor-metrics-1.0.12.jar:$lib_dir/com.eclipsesource.minimal-json.minimal-json-0.9.5.jar:$lib_dir/com.squareup.wire.wire-schema-jvm-4.9.7.jar:$lib_dir/com.squareup.wire.wire-runtime-jvm-4.9.7.jar:$lib_dir/com.github.erosb.json-sKema-0.15.0.jar:$lib_dir/com.fasterxml.jackson.datatype.jackson-datatype-guava-2.16.0.jar:$lib_dir/com.fasterxml.jackson.datatype.jackson-datatype-joda-2.16.0.jar:$lib_dir/com.fasterxml.jackson.module.jackson-module-parameter-names-2.16.0.jar:$lib_dir/com.kjetland.mbknor-jackson-jsonschema_2.13-1.0.39.jar:$lib_dir/org.jetbrains.kotlin.kotlin-scripting-jvm-1.9.10.jar:$lib_dir/io.confluent.common-config-7.7.1.jar:$lib_dir/com.amazonaws.aws-java-sdk-core-1.12.660.jar:$lib_dir/com.amazonaws.jmespath-java-1.12.660.jar:$lib_dir/software.amazon.glue.schema-registry-build-tools-1.1.20-cdk2.jar:$lib_dir/software.amazon.awssdk.url-connection-client-2.22.12.jar:$lib_dir/org.jetbrains.kotlin.kotlin-scripting-common-1.9.10.jar:$lib_dir/com.squareup.okio.okio-fakefilesystem-jvm-3.4.0.jar:$lib_dir/org.jetbrains.kotlin.kotlin-stdlib-common-1.9.10.jar:$lib_dir/com.squareup.wire.wire-runtime-4.3.0.jar:$lib_dir/com.squareup.wire.wire-kotlin-generator-4.3.0.jar:$lib_dir/com.squareup.wire.wire-java-generator-4.3.0.jar:$lib_dir/com.squareup.wire.wire-swift-generator-4.3.0.jar:$lib_dir/com.squareup.wire.wire-profiles-4.3.0.jar:$lib_dir/org.pcollections.pcollections-4.0.1.jar:$lib_dir/io.circe.circe-optics_3-0.15.0.jar:$lib_dir/eu.timepit.refined-scalacheck_3-0.11.2.jar:$lib_dir/org.testcontainers.nginx-1.20.2.jar:$lib_dir/org.typelevel.cats-kernel-laws_3-2.12.0.jar:$lib_dir/org.ow2.asm.asm-9.6.jar:$lib_dir/org.typelevel.cats-collections-core_3-0.9.8.jar:$lib_dir/commons-beanutils.commons-beanutils-1.9.4.jar:$lib_dir/org.apache.zookeeper.zookeeper-jute-3.8.4.jar:$lib_dir/org.apache.yetus.audience-annotations-0.12.0.jar:$lib_dir/io.netty.netty-transport-native-epoll-4.1.110.Final.jar:$lib_dir/org.hamcrest.hamcrest-core-1.3.jar:$lib_dir/com.github.docker-java.docker-java-transport-3.4.0.jar:$lib_dir/io.netty.netty-codec-socks-4.1.110.Final.jar:$lib_dir/io.netty.netty-tcnative-classes-2.0.65.Final.jar:$lib_dir/io.netty.netty-tcnative-boringssl-static-2.0.65.Final-linux-x86_64.jar:$lib_dir/io.netty.netty-tcnative-boringssl-static-2.0.65.Final-linux-aarch_64.jar:$lib_dir/io.netty.netty-tcnative-boringssl-static-2.0.65.Final-osx-x86_64.jar:$lib_dir/io.netty.netty-tcnative-boringssl-static-2.0.65.Final-osx-aarch_64.jar:$lib_dir/io.netty.netty-tcnative-boringssl-static-2.0.65.Final-windows-x86_64.jar:$lib_dir/io.netty.netty-resolver-dns-4.1.109.Final.jar:$lib_dir/io.netty.netty-resolver-dns-native-macos-4.1.109.Final-osx-x86_64.jar:$lib_dir/io.projectreactor.netty.reactor-netty-core-1.0.45.jar:$lib_dir/org.graalvm.regex.regex-24.1.0.jar:$lib_dir/org.graalvm.shadowed.icu4j-24.1.0.jar:$lib_dir/com.squareup.javapoet-1.13.0.jar:$lib_dir/com.squareup.kotlinpoet-jvm-1.16.0.jar:$lib_dir/javax.validation.validation-api-2.0.1.Final.jar:$lib_dir/org.jetbrains.kotlin.kotlin-script-runtime-1.9.10.jar:$lib_dir/com.fasterxml.jackson.dataformat.jackson-dataformat-cbor-2.12.6.jar:$lib_dir/org.jetbrains.kotlinx.kotlinx-datetime-jvm-0.4.0.jar:$lib_dir/com.squareup.kotlinpoet-1.10.2.jar:$lib_dir/com.squareup.wire.wire-grpc-client-jvm-4.3.0.jar:$lib_dir/com.squareup.wire.wire-grpc-server-generator-4.3.0.jar:$lib_dir/io.outfoxx.swiftpoet-1.3.1.jar:$lib_dir/org.typelevel.algebra_3-2.10.0.jar:$lib_dir/io.netty.netty-codec-dns-4.1.109.Final.jar:$lib_dir/io.netty.netty-resolver-dns-classes-macos-4.1.109.Final.jar:$lib_dir/org.jetbrains.kotlinx.kotlinx-coroutines-core-jvm-1.5.2.jar"
+
+# Disable prometheus agent for now
+# addJava "-javaagent:${app_home}/../jmx-prometheus-agent/jmx_prometheus_javaagent-1.0.1.jar=10095:${app_home}/../jmx_exporter_conf.yaml"
+# java_cmd is overrode in process_args when -java-home is used
+declare java_cmd=$(get_java_cmd)
+
+# if configuration files exist, prepend their contents to $@ so it can be processed by this runner
+[[ -f "$script_conf_file" ]] && set -- $(loadConfigFile "$script_conf_file") "$@"
+
+run "$@"

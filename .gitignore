@@ -1,0 +1,7 @@
+data
+resources/jre
+config.yml
+out
+build
+
+node_modules

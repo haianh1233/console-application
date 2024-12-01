@@ -1,0 +1,98 @@
+[
+  {
+    "client_id": "app-1-producer",
+    "service_account": "app-1-sa-producer",
+    "action": "write",
+    "topic": "T1",
+    "metrics": {
+      "bytes": 59000,
+      "nb_message": 490,
+      "batch_size": 140,
+      "encrypted": false,
+      "compressed": false,
+      "transactional": false,
+      "enable_data_quality": true,
+      "schema": "avro"
+    }
+  },
+  {
+    "client_id": "app-1-consumer",
+    "service_account": "app-1-sa-consumer",
+    "action": "read",
+    "topic": "T1",
+    "metrics": {
+      "bytes": 59000,
+      "nb_message": 490,
+      "batch_size": 140,
+      "encrypted": false,
+      "compressed": false,
+      "transactional": false,
+      "enable_data_quality": true,
+      "schema": "avro"
+    }
+  },
+  {
+    "client_id": "app-2-consumer",
+    "service_account": "app-2-sa-consumer",
+    "action": "read",
+    "topic": "T1",
+    "metrics": {
+      "bytes": 59000,
+      "nb_message": 490,
+      "batch_size": 140,
+      "encrypted": false,
+      "compressed": false,
+      "transactional": false,
+      "enable_data_quality": true,
+      "schema": "avro"
+    }
+  },
+  {
+    "client_id": "app-3-producer",
+    "service_account": "app-3-sa-producer",
+    "action": "write",
+    "topic": "T2",
+    "metrics": {
+      "bytes": 59000,
+      "nb_message": 490,
+      "batch_size": 140,
+      "encrypted": false,
+      "compressed": false,
+      "transactional": false,
+      "enable_data_quality": true,
+      "schema": "avro"
+    }
+  },
+  {
+    "client_id": "app-3-producer",
+    "service_account": "app-3-sa-producer",
+    "action": "write",
+    "topic": "T1",
+    "metrics": {
+      "bytes": 59000,
+      "nb_message": 490,
+      "batch_size": 140,
+      "encrypted": false,
+      "compressed": false,
+      "transactional": false,
+      "enable_data_quality": true,
+      "schema": "avro"
+    }
+  },
+  {
+    "client_id": "app-4-producer",
+    "service_account": "app-4-sa-consumer",
+    "action": "read",
+    "topic": "T2",
+    "metrics": {
+      "bytes": 59000,
+      "nb_message": 490,
+      "batch_size": 140,
+      "encrypted": false,
+      "compressed": false,
+      "transactional": false,
+      "enable_data_quality": true,
+      "schema": "avro"
+    }
+  }
+]

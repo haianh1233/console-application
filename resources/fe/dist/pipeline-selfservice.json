@@ -1,0 +1,75 @@
+{
+  "applications": [
+    {
+      "id": "app-1",
+      "name": "App 1"
+    },
+    {
+      "id": "app-2",
+      "name": "App 2"
+    },
+    {
+      "id": "app-3",
+      "name": "App 3"
+    },
+    {
+      "id": "app-4",
+      "name": "App 4"
+    }
+  ],
+  "serviceAccounts": [
+    {
+      "id": "app-1-sa-producer",
+      "name": "app-1-sa-producer",
+      "application": "app-1"
+    },
+    {
+      "id": "app-1-sa-consumer",
+      "name": "app-1-sa-consumer",
+      "application": "app-1"
+    },
+    {
+      "id": "app-2-sa-consumer",
+      "name": "app-2-sa-consumer",
+      "application": "app-2"
+    },
+    {
+      "id": "app-3-sa-producer",
+      "name": "app-3-sa-producer",
+      "application": "app-3"
+    },
+    {
+      "id": "app-4-sa-consumer",
+      "name": "app-4-sa-consumer",
+      "application": "app-4"
+    }
+  ],
+  "clusters": [
+    {
+      "id": "test",
+      "name": "Test"
+    }
+  ],
+  "topics": [
+    {
+      "id": "T1",
+      "name": "T1",
+      "cluster": "test",
+      "tags": [],
+      "application": "app-1",
+      "size": 253669,
+      "nbPartitions": 5,
+      "nbMessages": 16371
+    },
+    {
+      "id": "T2",
+      "name": "T2",
+      "cluster": "test",
+      "tags": [],
+      "application": "app-3",
+      "size": 253669,
+      "nbPartitions": 5,
+      "nbMessages": 16371
+    }
+  ]
+}

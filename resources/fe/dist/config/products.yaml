@@ -1,0 +1,39 @@
+title: "Kafka Customer Metrics Dashboard"
+model: "products"
+timeseries: "_timestamp_ms"
+measures:
+  - label: "Number of Messages"
+    expression: "SUM(_batch_records)"
+    name: nb_messages
+    description: "Total sum of the number of messages"
+    format_preset: humanize
+  - label: "Number of Batches"
+    expression: "COUNT(DISTINCT _batch_base_offset)"
+    name: nb_batches
+    description: "Total count of unique batches"
+    format_preset: humanize
+  - label: "Average Batch Size"
+    expression: "SUM(_batch_size) / COUNT(DISTINCT _batch_base_offset)"
+    name: avg_batch_size
+    description: "Total byte size divided by the number of batches"
+    format_preset: bytes
+  - label: "Total Byte Size"
+    expression: "SUM(_batch_size)"
+    name: total_byte_size
+    description: "Sum of the byte sizes of all messages"
+    format_preset: bytes
+
+
+dimensions:
+  - label: "Compression"
+    column: "_batch_compression_type"
+    description: "The type of compression used for the batch"
+  - label: "Transactional"
+    column: "_batch_transactional"
+    description: "Whether the batch is transactional"
+  - label: "Schema IDs"
+    column: "_value_schema_id"
+    description: "The schema ID used for the message value"
+  - label: "Partition"
+    column: "_partition"
+    description: "The partition where the message is stored"

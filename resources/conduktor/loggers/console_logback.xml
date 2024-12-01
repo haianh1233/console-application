@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="true" scanPeriod="15 seconds">
+    <variable name="CONSOLE_ROOT_LOG_LEVEL" value="${CONSOLE_ROOT_LOG_LEVEL:-INFO}" />
+    <variable name="CONSOLE_ROOT_LOG_APPENDER" value="${CONSOLE_ROOT_LOG_APPENDER:-ASYNC_STDOUT}" />
+    <variable name="MODULE" value="console" />
+
+    <appender name="SENTRY" class="io.sentry.logback.SentryAppender">
+        <filter class="io.conduktor.devtools.app.commons.sentry.FilterOutUserErrorLogs"/>
+        <options>
+           <enabled>${CDK_ENABLE_PRODUCT_METRICS:-true}</enabled>
+        </options>
+    </appender>
+
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <withJansi>false</withJansi>
+        <layout class="ch.qos.logback.classic.PatternLayout">
+            <pattern>%date{"yyyy-MM-dd'T'HH:mm:ss,SSSXXX", ${CDK_LOG_TIMEZONE}} [%thread] %-5level %logger{36} - %msg%n%rootException</pattern>
+        </layout>
+    </appender>
+
+    <appender name="STDOUT_COLOR" class="ch.qos.logback.core.ConsoleAppender">
+        <withJansi>true</withJansi>
+        <layout class="ch.qos.logback.classic.PatternLayout">
+            <pattern>%magenta(%date{"yyyy-MM-dd'T'HH:mm:ss,SSSXXX", ${CDK_LOG_TIMEZONE}}) %cyan([${MODULE}:%thread]) %highlight(%-5level) %logger{36} - %msg%n%rootException</pattern>
+        </layout>
+    </appender>
+
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <timestampPattern>yyyy-MM-dd'T'HH:mm:ss,SSSXXX</timestampPattern>
+            <timeZone>${CDK_LOG_TIMEZONE}</timeZone>
+            <fieldNames>
+                <timestamp>timestamp</timestamp> <!-- default is @timestamp -->
+                <logger>logger</logger> <!-- default is logger_name -->
+                <thread>thread</thread> <!-- default is thread_name -->
+                <version>[ignore]</version>
+                <levelValue>[ignore]</levelValue>
+            </fieldNames>
+        </encoder>
+    </appender>
+
+    <appender name="ASYNC_STDOUT" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>1024</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <appender-ref ref="STDOUT"/>
+    </appender>
+
+    <appender name="ASYNC_STDOUT_COLOR" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>1024</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <appender-ref ref="STDOUT_COLOR"/>
+    </appender>
+
+    <appender name="ASYNC_STDOUT_JSON" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>1024</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <appender-ref ref="JSON"/>
+    </appender>
+
+    <logger name="org.apache.http" level="INFO"/>
+    <logger name="org.apache.kafka" level="WARN"/>
+    <logger name="org.apache.kafka.clients.NetworkClient" level="ERROR"/>
+    <logger name="com.zaxxer.hikari.HikariConfig" level="INFO"/>
+    <logger name="com.zaxxer.hikari.pool.HikariPool" level="INFO"/>
+    <logger name="org.http4s.blazecore" level="WARN"/>
+    <logger name="org.http4s.server.blaze" level="WARN"/>
+    <logger name="org.http4s.blaze" level="WARN"/>
+    <logger name="sttp.tapir.server.http4s.Http4sDefaultServerLog" level="WARN"/>
+    <logger name="zio.kafka.consumer.internal" level="INFO"/>
+    <logger name="SegmentServiceLive" level="ERROR"/>
+
+    <root level="${CONSOLE_ROOT_LOG_LEVEL:-INFO}">
+        <appender-ref ref="${CONSOLE_ROOT_LOG_APPENDER}"/>
+        <appender-ref ref="SENTRY"/>
+    </root>
+
+    <statusListener class="ch.qos.logback.core.status.NopStatusListener"/>
+    <shutdownHook class="ch.qos.logback.core.hook.DelayingShutdownHook"/>
+</configuration>

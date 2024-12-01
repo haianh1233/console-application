@@ -1,0 +1,248 @@
+# Available format_preset options:
+# Money:
+# - currency_usd: This format is used for monetary values in USD, adding the "$" symbol in front of the formatted number.
+# Example: 1234567 becomes "$1.23M" (large numbers are formatted with 'K', 'M', 'B').
+#
+# Number:
+# - humanize: This format humanizes large numbers by adding commas for better readability.
+# Example: 1234567 becomes "$1.23M" (large numbers are formatted with 'K', 'M', 'B').
+#
+# Storage:
+# - YB: Yottabytes (2^80 bytes)
+# - ZB: Zettabytes (2^70 bytes)
+# - EB: Exabytes (2^60 bytes)
+# - PB: Petabytes (2^50 bytes)
+# - TB: Terabytes (2^40 bytes)
+# - GB: Gigabytes (2^30 bytes)
+# - MB: Megabytes (2^20 bytes)
+# - KB: Kilobytes (2^10 bytes)
+# - Bytes: Standard bytes unit (2^0)
+#
+# Storage values will scale automatically:
+# - If the value exceeds 1024 in the given unit, it will scale up to the next larger unit.
+# - If the value is below 1, it will scale down to the next smaller unit.
+# Example 1: 1024 GB becomes 1 TB.
+# Example 2: 0.5 GB becomes 512 MB.
+#
+# Percentage:
+# - percentage: This format multiplies the value by 100 and adds the "%" symbol.
+# Example: 0.25 becomes "25.00z%".
+#
+# Expression Aliases:
+# - Expressions can reference other measures by using the alias syntax, which starts with `$` followed by the alias name.
+# - These aliases can be used in multiple expressions to represent their calculated values.
+# Example: The expression "$ingress_gb + $egress_gb" sums the values of the `ingress_gb` and `egress_gb` measures.
+# - Aliases can be used recursively in other expressions, enabling modular and flexible calculations.
+# View settings:
+# - The `is_default` property is used to set the default view for the dashboard.
+# - Only one view can be set as the default view.
+# - If no `All` view in config file, we automatically add `All` view with all measures and dimensions.
+# - If no default view is set, the `All` view will be used as the default view.
+
+title: "Consumption Dashboard"
+model: "consumption_full_view"
+timeseries: "timestamp"
+views:
+  - label: "Budget"
+    name: budget
+    description: "The budget view"
+
+  - label: "Storage"
+    name: storage
+    description: "The storage view"
+
+  - label: "Network"
+    name: network
+    description: "The network view"
+    is_default: true
+
+measures:
+  - label: "Budget $"
+    expression: "$storage_cost_dollars + $network_cost_dollars + $partition_cost_dollars"
+    name: budget_cost
+    description: "The sum of budget in $"
+    format_preset: currency_usd
+    views:
+      - budget
+
+  - label: "Storage $"
+    expression: "$storage_gb * AVG(storage_price)"
+    name: storage_cost_dollars
+    description: "The sum of storage cost in $ for the latest version of each topic"
+    format_preset: currency_usd
+    views:
+      - storage
+      - budget
+
+  - label: "Storage"
+    expression: "SUM(topic_size) / 1024 / 1024 / 1024"
+    name: storage_gb
+    description: "The sum of storage for the latest version of each topic"
+    format_preset: GB
+    views:
+      - storage
+      - budget
+
+  - label: "Network Cost $"
+    expression: "$ingress_dollars + $egress_dollars"
+    name: network_cost_dollars
+    description: "The sum of network cost (Ingress + Egress)"
+    format_preset: currency_usd
+    views:
+      - network
+      - budget
+
+  - label: "Partition Cost $"
+    expression: "SUM(topic_nb_partitions * partition_price)"
+    name: partition_cost_dollars
+    description: "The sum of partition cost in $"
+    format_preset: currency_usd
+    views:
+      - budget
+
+  - label: "Throughput"
+    expression: "$ingress_gb + $egress_gb"
+    name: throughput
+    description: "The sum of ingress and egress"
+    format_preset: GB
+    views:
+      - network
+
+  - label: "Ingress $"
+    expression: "$ingress_gb * AVG(ingress_price)"
+    name: ingress_dollars
+    description: "The ingress cost"
+    format_preset: currency_usd
+    views:
+      - budget
+
+  - label: "Ingress"
+    expression: "SUM(IF(action = 'write', bytes / 1024 / 1024 / 1024, 0))"
+    name: ingress_gb
+    description: "The total ingress"
+    format_preset: GB
+    views:
+      - network
+
+  - label: "Egress $"
+    expression: "$egress_gb * AVG(egress_price)"
+    name: egress_dollars
+    description: "The total egress"
+    format_preset: currency_usd
+    views:
+      - budget
+
+  - label: "Egress"
+    expression: "SUM(IF(action = 'read', bytes / 1024 / 1024 / 1024, 0))"
+    name: egress_gb
+    description: "The total egress"
+    format_preset: GB
+    views:
+      - network
+
+  - label: "Number of Clusters"
+    expression: "COUNT(DISTINCT topic_cluster)"
+    name: number_of_clusters
+    description: "The count of unique clusters"
+    format_preset: humanize
+    views:
+      - storage
+
+  - label: "Number of Applications"
+    expression: "COUNT(DISTINCT application_name)"
+    name: number_of_applications
+    description: "The count of unique applications"
+    format_preset: humanize
+
+  - label: "Number of Service Accounts"
+    expression: "COUNT(DISTINCT service_account_name)"
+    name: number_of_service_accounts
+    description: "The count of unique service accounts"
+    format_preset: humanize
+
+  - label: "Number of Topics"
+    expression: "COUNT(DISTINCT topic)"
+    name: number_of_topics
+    description: "The count of unique topics"
+    format_preset: humanize
+
+dimensions:
+  - label: "Application"
+    name: application
+    column: application_name
+    description: "The name of the application"
+    views:
+      - budget
+      - storage
+      - network
+
+  - label: "Service Account"
+    name: service_account
+    column: service_account_name
+    description: "The name of the service account"
+    views:
+      - storage
+      - network
+
+  - label: "Topic"
+    name: topic
+    column: topic
+    description: "The name of the topic"
+    views:
+      - storage
+      - network
+
+  - label: "Cluster"
+    name: cluster
+    column: topic_cluster
+    description: "The name of the cluster"
+    views:
+      - budget
+      - storage
+      - network
+
+  - label: "Schema"
+    name: schema
+    column: schema
+    description: "The name of the data format schema"
+
+  - label: "Compressed"
+    name: compressed
+    column: compressed
+    description: "Was the data compressed?"
+
+  - label: "Business Unit"
+    name: business_unit
+    column: "application_labels.`Business-Unit`"
+    description: "The name of the business unit"
+    views:
+      - budget
+      - storage
+      - network
+
+  - label: "Environment"
+    name: environment
+    column: "application_labels.Environment"
+    description: "The name of the environment"
+    views:
+      - budget
+      - storage
+      - network
+
+  - label: "Classification"
+    name: classification
+    column: "application_labels.Classification"
+    description: "The name of the classification"
+    views:
+      - budget
+      - storage
+      - network
+
+  - label: "Technology"
+    name: technology
+    column: "application_labels.Technology"
+    description: "The name of the technology"
+    views:
+      - budget
+      - storage
+      - network

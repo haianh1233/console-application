@@ -1,0 +1,50 @@
+port: 8080
+monitoring:
+  callback_url: http://localhost:8080/monitoring/api/
+  notifications_callback_url: http://localhost:8080
+  clusters_refresh_interval: 60
+database:
+  host: localhost
+  port: 5432
+  database: conduktor-console
+  username: conduktor
+  password: change_me
+  ssl_root_cert: null
+  options: {}
+kafka_sql:
+  database:
+    host: localhost
+    port: 5433
+    database: conduktor-sql
+    username: conduktor
+    password: change_me
+    ssl_root_cert: null
+    options: {}
+admin:
+  email: admin@demo.com
+  password: admin
+auth: null
+sso: null
+license: null
+platform: {}
+enable_product_metrics: true
+lag_exporter:
+  frequency: 30
+  clusterParallelism: 1
+  indexerTimeout: 300
+metadata_indexer:
+  frequency: 30
+  clusterParallelism: 1
+  indexerTimeout: 300
+monitoring_config:
+  frequency: 30
+  clusterParallelism: 1
+  indexerTimeout: 300
+connect_indexer:
+  frequency: 30
+  clusterParallelism: 1
+  indexerTimeout: 300
+registry_indexer:
+  frequency: 30
+  clusterParallelism: 1
+  indexerTimeout: 300
