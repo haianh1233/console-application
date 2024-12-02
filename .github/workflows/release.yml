@@ -25,6 +25,10 @@ jobs:
         if: runner.os != 'Windows'
         run: ./download_jre.sh
 
+      - name: Install 7-Zip
+        if: runner.os == 'Windows'
+        run: choco install 7zip -y
+
       - name: Debug File Path
         if: runner.os == 'Windows'
         run: dir
