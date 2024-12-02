@@ -10,11 +10,6 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "publish": "cross-env QA_RPATHS=19 electron-forge publish"
   },
-  "build": {
-    "files": [
-      "node_modules/@embedded-postgres/**"
-    ]
-  },
   "author": "",
   "license": "ISC",
   "devDependencies": {

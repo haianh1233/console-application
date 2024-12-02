@@ -25,7 +25,7 @@ jobs:
         if: runner.os != 'Windows'
         run: ./download_jre.sh
 
-      - name: Install 7-Zip
+      - name: Install 7-Zip (Windows)
         if: runner.os == 'Windows'
         run: choco install 7zip -y
 
