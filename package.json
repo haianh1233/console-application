@@ -1,13 +1,14 @@
 {
   "name": "console-electron-test",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "console-electron-test",
   "type": "module",
   "main": "src/main/index.js",
   "scripts": {
     "start": "electron-forge start",
     "make": "electron-forge make",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "publish": "QA_RPATHS=$((0x0001 | 0x0002 | 0x0010)) electron-forge publish"
   },
   "build": {
     "files": [
