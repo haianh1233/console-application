@@ -27,7 +27,7 @@ jobs:
 
       - name: Download JRE (Windows)
         if: runner.os == 'Windows'
-        run: download_jre.bat
+        run: cmd /c download_jre.bat
 
       - name: Install dependencies
         run: npm ci
