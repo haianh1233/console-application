@@ -40,7 +40,7 @@ module.exports = {
       config: {
         repository: {
           owner: 'haianh1233',
-          name: 'electron-kafka-tester',
+          name: 'console-application',
         },
         prerelease: true,
       },
