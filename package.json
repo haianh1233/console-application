@@ -1,6 +1,6 @@
 {
   "name": "console-electron-test",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "console-electron-test",
   "type": "module",
   "main": "src/main/index.js",
