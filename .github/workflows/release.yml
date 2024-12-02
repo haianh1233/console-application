@@ -21,8 +21,13 @@ jobs:
         with:
           node-version: 20
 
-      - name: Download jre
+      - name: Download JRE (Linux/macOS)
+        if: runner.os != 'Windows'
         run: ./download_jre.sh
+
+      - name: Download JRE (Windows)
+        if: runner.os == 'Windows'
+        run: download_jre.bat
 
       - name: Install dependencies
         run: npm ci
