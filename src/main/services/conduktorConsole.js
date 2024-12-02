@@ -1,10 +1,36 @@
 import { spawn } from 'child_process'
 import path from 'path'
 
-import { __resource_dirname, configFilePath, CONSOLE_STARTUP_SCRIPT, LINUX_JRE } from './../utils/utils.js'
+import {
+  __resource_dirname,
+  configFilePath,
+  CONSOLE_STARTUP_SCRIPT,
+  LINUX_JRE, MACOS_JRE,
+  WINDOWS_CONSOLE_STARTUP_SCRIPT, WINDOWS_JRE
+} from './../utils/utils.js'
 
 export function startConsole() {
-  const scriptPath = path.join(__resource_dirname, CONSOLE_STARTUP_SCRIPT)
+  const platform = os.platform();
+
+  let scriptPath;
+  let bundledJvm;
+
+  switch (platform) {
+    case 'win32':
+      scriptPath = path.join(__resource_dirname, WINDOWS_CONSOLE_STARTUP_SCRIPT);
+      bundledJvm = path.join(__resource_dirname, WINDOWS_JRE);
+      break;
+    case 'darwin':
+      scriptPath = path.join(__resource_dirname, CONSOLE_STARTUP_SCRIPT);
+      bundledJvm = path.join(__resource_dirname, MACOS_JRE);
+      break;
+    case 'linux':
+      scriptPath = path.join(__resource_dirname, CONSOLE_STARTUP_SCRIPT);
+      bundledJvm = path.join(__resource_dirname, LINUX_JRE);
+      break;
+    default:
+      throw new Error(`Unsupported platform: ${platform}`);
+  }
 
   const env = {
     ...process.env,
