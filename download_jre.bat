@@ -1,13 +1,7 @@
 @echo off
 set VERSION=21.0.4+7
-
-:: Manually encode the + character to %2B
-set ENCODED_VERSION=%VERSION:+=%25%2B%
-
-:: Replace + with _ for formatted version
-set FORMATTED_VERSION=%VERSION:+=_%
-
-set BASE_URL=https://github.com/adoptium/temurin21-binaries/releases/download/jdk-%ENCODED_VERSION%
+set FORMATTED_VERSION=21.0.4_7
+set BASE_URL=https://github.com/adoptium/temurin21-binaries/releases/download/jdk-%VERSION%
 set OUTPUT_DIR=.\resources\jre
 set URL=%BASE_URL%/OpenJDK21U-jdk_x64_windows_hotspot_%FORMATTED_VERSION%.zip
 set OUTPUT_FILE=%OUTPUT_DIR%\OpenJDK21U-jdk_x64_windows_hotspot_%FORMATTED_VERSION%.zip
