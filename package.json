@@ -1,6 +1,6 @@
 {
   "name": "console-electron-test",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "console-electron-test",
   "type": "module",
   "main": "src/main/index.js",
@@ -8,7 +8,7 @@
     "start": "electron-forge start",
     "make": "electron-forge make",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "publish": "cross-env QA_RPATHS=0x0001|0x0002|0x0010 electron-forge publish"
+    "publish": "cross-env QA_RPATHS=19 electron-forge publish"
   },
   "build": {
     "files": [
