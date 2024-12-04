@@ -1,6 +1,6 @@
 import path from 'path'
 
-import { app, BrowserWindow } from 'electron'
+import { screen, app, BrowserWindow } from 'electron'
 
 import { startConsole, stopConsole } from './services/conduktorConsole.js'
 import { getConfig } from './config/configManager.js'
@@ -13,9 +13,11 @@ let consoleProcess
 let proxy
 
 async function createWindow(config) {
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+
   const window = new BrowserWindow({
-    width: 800,
-    height: 600,
+    width,
+    height,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: true,

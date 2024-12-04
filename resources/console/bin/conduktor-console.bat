@@ -104,7 +104,7 @@ if defined CUSTOM_MAIN_CLASS (
 )
 
 rem Call the application and pass all arguments unchanged.
-"%_JAVACMD%" --add-opens java.base/java.lang=ALL-UNNAMED --add-exports java.base/sun.security.jca=ALL-UNNAMED !CONDUKTOR_CONSOLE_OPTS! -cp %CLASSPATH% %MAIN_CLASS% !_APP_ARGS! > %APP_HOME%\output.log 2>&1
+"%_JAVACMD%" --add-opens java.base/java.lang=ALL-UNNAMED --add-exports java.base/sun.security.jca=ALL-UNNAMED !CONDUKTOR_CONSOLE_OPTS! -cp %CLASSPATH% %MAIN_CLASS% !_APP_ARGS!
 
 @endlocal
 
