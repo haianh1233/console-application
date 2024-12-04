@@ -16,12 +16,12 @@ export const __resource_dirname = isDev
 export const FE_DIST_PATH = path.join(__resource_dirname, '/fe/dist')
 
 export const CONSOLE_STARTUP_SCRIPT = '/console/bin/conduktor-console'
-export const WINDOWS_CONSOLE_STARTUP_SCRIPT = '/console/bin/conduktor-console.bat'
+export const WINDOWS_CONSOLE_STARTUP_SCRIPT = path.join('console', 'bin', 'conduktor-console.bat');
 export const CONSOLE_PLUGINS_DIR = '/conduktor/plugins'
 
 export const LINUX_JRE = '/jre/linux'
 export const MACOS_JRE = '/jre/macos/Contents/Home'
-export const WINDOWS_JRE = '/jre/windows'
+export const WINDOWS_JRE = path.join('jre', 'windows')
 
 export const userDataPath = app.getPath('userData')
 export const configFilePath = isDev

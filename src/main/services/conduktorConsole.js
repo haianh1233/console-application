@@ -1,6 +1,6 @@
 import { spawn } from 'child_process'
 import path from 'path'
-
+import os from 'os'
 import {
   __resource_dirname,
   configFilePath,
@@ -36,7 +36,7 @@ export function startConsole() {
     ...process.env,
     CONSOLE_CONFIG_FILE: configFilePath,
     ENV: 'DEV',
-    bundled_jvm: path.join(__resource_dirname, LINUX_JRE),
+    bundled_jvm: bundledJvm,
   }
 
   const consoleProcess = spawn(scriptPath, [], {
