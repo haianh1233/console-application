@@ -57,6 +57,15 @@ export function startConsole() {
 
 export function stopConsole(consoleProcess) {
   if (consoleProcess) {
-    consoleProcess.kill('SIGTERM')
+    const pid = consoleProcess.pid;
+    const platform = process.platform;
+
+    if (platform === 'win32') {
+      // Use taskkill to terminate the process on Windows
+      spawn('taskkill', ['/PID', pid, '/F', '/T'], { stdio: 'inherit' });
+    } else {
+      // For Unix-like systems, use SIGTERM
+      consoleProcess.kill('SIGTERM');
+    }
   }
 }

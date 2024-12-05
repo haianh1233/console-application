@@ -31,6 +31,36 @@ async function createWindow(config) {
   window.loadURL(`http://localhost:${config.consolePort}`)
 }
 
+async function appTeardown() {
+  try {
+    try {
+      stopProxy(proxy);
+    } catch (err) {
+      console.error('Failed to stop proxy:', err);
+    }
+    proxy = null;
+
+    try {
+      stopConsole(consoleProcess);
+    } catch (err) {
+      console.error('Failed to stop console process:', err);
+    }
+    consoleProcess = null;
+
+    try {
+      await shutdownClusters();
+    } catch (err) {
+      console.error('Failed to shutdown clusters:', err);
+    }
+  } catch (err) {
+    console.error('Unexpected error during teardown:', err);
+  } finally {
+    app.quit();
+  }
+}
+
+
+
 app.whenReady().then(async () => {
   const consoleConfig = await getConfig()
 
@@ -41,7 +71,7 @@ app.whenReady().then(async () => {
 
   if (!postgresHealthy) {
     console.error('Postgres clusters are not healthy. Exiting...')
-    app.quit()
+    appTeardown()
     return
   }
 
@@ -56,25 +86,20 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
-    stopProxy(proxy)
-    shutdownClusters()
-    stopConsole(consoleProcess)
-    app.quit()
+    appTeardown()
   }
 })
 
 app.on('before-quit', () => {
-  stopProxy(proxy)
-  shutdownClusters()
-  stopConsole(consoleProcess)
+  appTeardown()
 })
 
 process.on('uncaughtException', err => {
   console.error(`Uncaught Exception: ${err.message}`)
-  app.quit()
+  appTeardown()
 })
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Promise Rejection:', reason)
-  app.quit()
+  appTeardown()
 })
