@@ -2,6 +2,7 @@ import path from 'path'
 
 import { screen, app, BrowserWindow } from 'electron'
 import squirrelStartup from 'electron-squirrel-startup'
+import { updateElectronApp } from 'update-electron-app'
 
 import { startConsole, stopConsole } from './services/conduktorConsole.js'
 import { getConfig } from './config/configManager.js'
@@ -11,6 +12,8 @@ import { __dirname } from './utils/utils.js'
 
 let consoleProcess
 let proxy
+
+updateElectronApp()
 
 if (squirrelStartup) {
   app.quit();

@@ -10,6 +10,10 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "publish": "cross-env QA_RPATHS=19 electron-forge publish"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/haianh1233/console-application.git"
+  },
   "author": "",
   "license": "ISC",
   "devDependencies": {
@@ -47,6 +51,7 @@
     "js-yaml": "^4.1.0",
     "pg": "^8.13.1",
     "sudo-prompt": "^9.2.1",
+    "update-electron-app": "^3.0.0",
     "ws": "^8.18.0"
   }
 }

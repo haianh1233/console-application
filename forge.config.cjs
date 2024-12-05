@@ -14,7 +14,7 @@ module.exports = {
     {
       name: '@electron-forge/maker-squirrel',
       config: {
-        authors: 'anhnguyen',
+        authors: 'conduktor',
         description: 'console-application',
       },
     },
@@ -31,8 +31,18 @@ module.exports = {
     },
     {
       name: '@electron-forge/maker-rpm',
-      config: {},
+      config: {
+        authors: 'conduktor',
+        description: 'console-application',
+      },
     },
+    {
+      name: '@electron-forge/maker-deb',
+      config: {
+        authors: 'conduktor',
+        description: 'console-application',
+      },
+    }
   ],
   publishers: [
     {
