@@ -1,6 +1,6 @@
 {
   "name": "console-application",
-  "version": "1.0.16",
+  "version": "1.0.17",
   "description": "console-application",
   "type": "module",
   "main": "src/main/index.js",
