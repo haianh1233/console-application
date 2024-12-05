@@ -13,7 +13,9 @@ import { __dirname } from './utils/utils.js'
 let consoleProcess
 let proxy
 
-updateElectronApp()
+updateElectronApp({
+  updateInterval: '5 minutes',
+})
 
 if (squirrelStartup) {
   app.quit();
@@ -30,6 +32,10 @@ async function createWindow(config) {
       nodeIntegration: true,
     },
   })
+
+  window.webContents.on('did-finish-load', () => {
+    window.setTitle(`Conduktor Console - v${app.getVersion()}`);
+  });
 
   window.loadURL(`http://localhost:${config.consolePort}`)
 }
