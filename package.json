@@ -1,7 +1,7 @@
 {
-  "name": "console-electron-test",
+  "name": "console-application",
   "version": "1.0.13",
-  "description": "console-electron-test",
+  "description": "console-application",
   "type": "module",
   "main": "src/main/index.js",
   "scripts": {
@@ -41,6 +41,7 @@
     "@electron/fuses": "^1.8.0",
     "async-exit-hook": "^2.0.1",
     "electron-is-dev": "^3.0.1",
+    "electron-squirrel-startup": "^1.0.1",
     "express": "^4.21.1",
     "http-proxy-middleware": "^3.0.3",
     "js-yaml": "^4.1.0",

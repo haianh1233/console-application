@@ -15,7 +15,9 @@ module.exports = {
       name: '@electron-forge/maker-squirrel',
       config: {
         authors: 'anhnguyen',
-        description: 'electron-kafka-tester',
+        name: "console-application",
+        setupExe: "console-application-setup.exe",
+        description: 'console-application',
       },
     },
     {

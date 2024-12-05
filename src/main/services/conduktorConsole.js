@@ -8,6 +8,7 @@ import {
   LINUX_JRE, MACOS_JRE,
   WINDOWS_CONSOLE_STARTUP_SCRIPT, WINDOWS_JRE
 } from './../utils/utils.js'
+import isDev from 'electron-is-dev'
 
 export function startConsole() {
   const platform = os.platform();
@@ -40,7 +41,7 @@ export function startConsole() {
   }
 
   const consoleProcess = spawn(scriptPath, [], {
-    stdio: 'inherit',
+    stdio: isDev ? 'inherit' : 'ignore',
     shell: true,
     env,
   })

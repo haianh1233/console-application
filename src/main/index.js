@@ -1,6 +1,7 @@
 import path from 'path'
 
 import { screen, app, BrowserWindow } from 'electron'
+import squirrelStartup from 'electron-squirrel-startup'
 
 import { startConsole, stopConsole } from './services/conduktorConsole.js'
 import { getConfig } from './config/configManager.js'
@@ -8,9 +9,12 @@ import { isPostgresHealthy, shutdownClusters, startPostgresqlClusters } from './
 import { createProxy, stopProxy } from './services/proxy.js'
 import { __dirname } from './utils/utils.js'
 
-let postgresProcess
 let consoleProcess
 let proxy
+
+if (squirrelStartup) {
+  app.quit();
+}
 
 async function createWindow(config) {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
