@@ -62,7 +62,7 @@ export function stopConsole(consoleProcess) {
 
     if (platform === 'win32') {
       // Use taskkill to terminate the process on Windows
-      spawn('taskkill', ['/PID', pid, '/F', '/T'], { stdio: 'inherit' });
+      spawn('taskkill', ['/PID', pid, '/F', '/T'], { stdio: isDev ? 'inherit' : 'ignore',})
     } else {
       // For Unix-like systems, use SIGTERM
       consoleProcess.kill('SIGTERM');

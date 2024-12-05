@@ -36,8 +36,8 @@ export async function startPostgresqlClusters(config) {
 }
 
 export async function isPostgresHealthy(config) {
-  const maxRetries = 30 // Retry for a maximum of 10 intervals (30 seconds total)
-  const interval = 1000 // 1 seconds
+  const maxRetries = 30
+  const interval = 1000
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     console.log(`Health check attempt ${attempt}/${maxRetries}...`)
@@ -60,7 +60,6 @@ export async function isPostgresHealthy(config) {
       config.kafka_sql.database.database,
     )
 
-    // If both are healthy, return true
     if (databaseHealth && kafkaSqlHealth) {
       console.log('Both Postgres clusters are healthy.')
       return true
@@ -70,7 +69,6 @@ export async function isPostgresHealthy(config) {
     await new Promise(resolve => setTimeout(resolve, interval))
   }
 
-  // If retries are exhausted, return false
   console.error('Postgres clusters are not healthy after multiple attempts.')
   return false
 }
